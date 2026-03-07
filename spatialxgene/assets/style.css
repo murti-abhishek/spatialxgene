@@ -1,0 +1,193 @@
+/* ── spatialxgene dark theme ─────────────────────────────────────── */
+
+* { box-sizing: border-box; }
+
+body {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  margin: 0;
+  overflow: hidden;  /* no page scroll; graph handles pan/zoom */
+}
+
+/* ── Full-screen graph ─────────────────────────────────────────────── */
+
+.full-screen-graph {
+  position: fixed !important;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 1;
+}
+
+/* Plotly internal containers must also fill parent */
+.full-screen-graph .js-plotly-plot,
+.full-screen-graph .plot-container,
+.full-screen-graph .svg-container {
+  height: 100vh !important;
+}
+
+/* ── Sidebar overlay ──────────────────────────────────────────────── */
+
+.spatialxgene-sidebar {
+  position: fixed;
+  top: 0; left: 0;
+  width: 260px;
+  height: 100vh;
+  background: rgba(30, 30, 32, 0.93);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-right: 1px solid #2a2a2a;
+  z-index: 100;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 18px 14px 24px;
+}
+
+/* ── Cell count badge ─────────────────────────────────────────────── */
+
+.cell-count-badge {
+  position: fixed;
+  bottom: 10px; right: 12px;
+  color: #888;
+  font-size: 11px;
+  font-family: monospace;
+  letter-spacing: 0.3px;
+  z-index: 200;
+  pointer-events: none;
+}
+
+/* ── Dark dropdown ────────────────────────────────────────────────── */
+
+.dark-dropdown .Select-control {
+  background-color: #2a2a2a !important;
+  border-color: #3a3a3a !important;
+  color: #d4d4d4 !important;
+  border-radius: 3px !important;
+}
+.dark-dropdown .Select-menu-outer {
+  background-color: #2a2a2a !important;
+  border-color: #444 !important;
+  z-index: 9999;
+  max-height: 260px !important;
+}
+.dark-dropdown .VirtualizedSelectOption {
+  color: #d4d4d4 !important;
+  font-size: 12px;
+}
+.dark-dropdown .VirtualizedSelectFocusedOption {
+  background-color: #094771 !important;
+}
+.dark-dropdown .Select-placeholder,
+.dark-dropdown .Select-value-label { color: #aaa !important; }
+.dark-dropdown .Select-arrow        { border-top-color: #666 !important; }
+.dark-dropdown .Select-input input  { color: #d4d4d4 !important; }
+
+/* ── Sliders ──────────────────────────────────────────────────────── */
+
+.rc-slider-rail  { background-color: #333 !important; }
+.rc-slider-track { background-color: #4ec9b0 !important; }
+.rc-slider-handle {
+  border-color: #4ec9b0 !important;
+  background-color: #4ec9b0 !important;
+  box-shadow: none !important;
+}
+.rc-slider-handle:hover,
+.rc-slider-handle:active { box-shadow: 0 0 0 4px rgba(78,201,176,.25) !important; }
+
+.rc-slider-mark-text { color: #fff !important; font-size: 10px !important; }
+.rc-slider-mark-text-active { color: #fff !important; }
+.rc-slider-tooltip-inner {
+  background-color: #333 !important;
+  color: #fff !important;
+  font-size: 10px !important;
+}
+.rc-slider-tooltip-arrow { border-top-color: #333 !important; }
+
+/* Dash slider mark labels (override Bootstrap Cyborg theme) */
+.dash-slider .rc-slider-mark span,
+.dark-slider .rc-slider-mark span,
+.rc-slider-mark span,
+.rc-slider-mark > span,
+.rc-slider-mark *,
+[class*="slider"] [class*="mark"] span,
+[class*="Slider"] [class*="mark"] span {
+  color: #ccc !important;
+}
+
+/* Target any blue links inside the sidebar slider area */
+.spatialxgene-sidebar a,
+.spatialxgene-sidebar .rc-slider a {
+  color: #ccc !important;
+  text-decoration: none !important;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar       { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #555; }
+
+/* ── Plotly modebar ───────────────────────────────────────────────── */
+
+.modebar-container { right: 4px !important; top: 4px !important; }
+.modebar-btn svg   { fill: #555 !important; }
+.modebar-btn:hover svg { fill: #aaa !important; }
+
+/* ── DGE buttons ──────────────────────────────────────────────────── */
+
+.dge-set-btn {
+  font-size: 9px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid #444;
+  background: #2d2d2d;
+  color: #aaa;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.dge-set-btn:hover { background: #3a3a3a; color: #ddd; }
+
+.dge-run-btn {
+  font-size: 10px;
+  padding: 4px 10px;
+  border-radius: 3px;
+  border: 1px solid #4ec9b0;
+  background: #1a3a30;
+  color: #4ec9b0;
+  cursor: pointer;
+  flex: 1;
+  transition: background 0.15s;
+}
+.dge-run-btn:hover:not(:disabled) { background: #254a3e; }
+.dge-run-btn:disabled {
+  border-color: #444;
+  background: #222;
+  color: #555;
+  cursor: not-allowed;
+}
+
+.dge-action-btn {
+  font-size: 10px;
+  padding: 3px 9px;
+  border-radius: 3px;
+  border: 1px solid #444;
+  background: #2d2d2d;
+  color: #888;
+  cursor: pointer;
+}
+.dge-action-btn:hover { color: #ccc; border-color: #666; }
+
+/* ── DGE progress bar ─────────────────────────────────────────────── */
+
+.dge-progress { background-color: #2d2d2d !important; border-radius: 4px; }
+.dge-progress .progress-bar { background-color: #4ec9b0 !important; }
+
+/* ── DGE modal dark overrides ─────────────────────────────────────── */
+
+.modal-content {
+  background-color: #1e1e1e !important;
+  border: 1px solid #444 !important;
+}
+.modal-header { border-bottom-color: #333 !important; }
+.modal-footer { border-top-color:    #333 !important; }
+.btn-close    { filter: invert(0.6); }
