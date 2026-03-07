@@ -7,7 +7,9 @@ Interactive spatial transcriptomics viewer for `.h5ad` files — like CellXGene 
 
 Tools like the Xenium Explorer are great during active analysis but are limited to a single slide and cannot load `.h5ad` files produced by downstream pipelines. `spatialxgene` fills that gap: it reads any `.h5ad` directly, renders spatial coordinates alongside computed embeddings, and scales to multi-slide datasets where coordinates from several Xenium runs have been stitched into a shared space.
 
-## Screenshots
+## Gallery
+
+<div align="center">
 
 <img src="docs/images/spatial_slide_id.png" width="700" alt="4 Xenium slides stitched into a virtual TMA, colored by slide ID">
 
@@ -20,6 +22,8 @@ Tools like the Xenium Explorer are great during active analysis but are limited 
 <img src="docs/images/umap_cell_type.png" width="700" alt="UMAP colored by cell type">
 
 *UMAP embedding of the same dataset, colored by cell type.*
+
+</div>
 
 ## Features
 
