@@ -5,11 +5,21 @@
 
 Interactive spatial transcriptomics viewer for `.h5ad` files — like CellXGene but with spatial coordinates, UMAP, PCA, and scVI embeddings. Includes manual cell selection and differential gene expression (DGE).
 
+Tools like the Xenium Explorer are great during active analysis but are limited to a single slide and cannot load `.h5ad` files produced by downstream pipelines. `spatialxgene` fills that gap: it reads any `.h5ad` directly, renders spatial coordinates alongside computed embeddings, and scales to multi-slide datasets where coordinates from several Xenium runs have been stitched into a shared space.
+
+## Screenshots
+
+![4 Xenium slides stitched into a virtual TMA, colored by slide](docs/images/spatial_slide_id.png)
+*Four Xenium slides stitched into a virtual TMA, colored by slide ID — 1,869,931 cells.*
+
+![Spatial view colored by cell type](docs/images/spatial_cell_type.png)
+*Same view colored by cell type, revealing tissue architecture across all slides simultaneously.*
+
 ## Features
 
 - Visualize spatial, UMAP, PCA, and scVI embeddings
 - Color cells by categorical or continuous metadata, or by gene expression
-- Datashader-powered rendering for smooth zoom/pan on 500k+ cells
+- Datashader-powered rendering for smooth zoom/pan on datasets up to ~2M cells
 - Point size and opacity controls
 - Lasso/box selection for manual cell group definition
 - Differential gene expression between two user-defined groups (Welch t-test or Wilcoxon)
