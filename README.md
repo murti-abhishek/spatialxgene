@@ -9,11 +9,17 @@ Tools like the Xenium Explorer are great during active analysis but are limited 
 
 ## Screenshots
 
-![4 Xenium slides stitched into a virtual TMA, colored by slide](docs/images/spatial_slide_id.png)
+<img src="docs/images/spatial_slide_id.png" width="700" alt="4 Xenium slides stitched into a virtual TMA, colored by slide ID">
+
 *Four Xenium slides stitched into a virtual TMA, colored by slide ID — 1,869,931 cells.*
 
-![Spatial view colored by cell type](docs/images/spatial_cell_type.png)
+<img src="docs/images/spatial_cell_type.png" width="700" alt="Spatial view colored by cell type">
+
 *Same view colored by cell type, revealing tissue architecture across all slides simultaneously.*
+
+<img src="docs/images/umap_cell_type.png" width="700" alt="UMAP colored by cell type">
+
+*UMAP embedding of the same dataset, colored by cell type.*
 
 ## Features
 
