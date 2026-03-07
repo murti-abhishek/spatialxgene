@@ -46,8 +46,21 @@ spatialxgene = "spatialxgene.cli:main"
 Homepage = "https://github.com/amurti/spatialxgene"
 "Bug Tracker" = "https://github.com/amurti/spatialxgene/issues"
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 
 [tool.setuptools.package-data]
 spatialxgene = ["assets/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["spatialxgene"]
+omit = ["spatialxgene/assets/*"]

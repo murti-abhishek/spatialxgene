@@ -1,5 +1,8 @@
 # spatialxgene
 
+[![CI](https://github.com/murti-abhishek/spatialxgene/actions/workflows/ci.yml/badge.svg)](https://github.com/murti-abhishek/spatialxgene/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/murti-abhishek/spatialxgene/graph/badge.svg)](https://codecov.io/gh/murti-abhishek/spatialxgene)
+
 Interactive spatial transcriptomics viewer for `.h5ad` files — like CellXGene but with spatial coordinates, UMAP, PCA, and scVI embeddings. Includes manual cell selection and differential gene expression (DGE).
 
 ## Features
@@ -16,13 +19,7 @@ Interactive spatial transcriptomics viewer for `.h5ad` files — like CellXGene 
 ## Installation
 
 ```bash
-pip install spatialxgene
-```
-
-Or from source:
-
-```bash
-git clone https://github.com/amurti/spatialxgene
+git clone https://github.com/murti-abhishek/spatialxgene
 cd spatialxgene
 pip install -e .
 ```
