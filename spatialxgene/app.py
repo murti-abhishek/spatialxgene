@@ -370,7 +370,7 @@ def _sidebar_legend(cat_colors, obs_vals):
 
 def _dge_table(df: pd.DataFrame, n1: int, n2: int) -> html.Div:
     """Build a dark-themed DataTable from a DGE result DataFrame."""
-    display = df.sort_values('log2fc', ascending=False).head(100).copy()
+    display = df.sort_values('log2fc', ascending=False).copy()
     display.insert(0, '#', range(1, len(display) + 1))
     display['log2fc'] = display['log2fc'].round(3)
     display['mean1']  = display['mean1'].round(4)
