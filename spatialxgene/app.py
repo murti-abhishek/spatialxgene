@@ -150,8 +150,8 @@ def _resolve_color(
         vals, is_cat, cat_colors = data_obj.get_color_info(color_col)
         if not is_cat and vals is not None:
             arr = np.asarray(vals, dtype=float)
-            vmin = float(np.nanmin(arr))
-            vmax = float(np.nanmax(arr))
+            vmin = float(np.nanmin(arr)) if np.any(np.isfinite(arr)) else 0.0
+            vmax = float(np.nanmax(arr)) if np.any(np.isfinite(arr)) else 1.0
         else:
             vmin = vmax = None
         return vals, is_cat, cat_colors, vmin, vmax

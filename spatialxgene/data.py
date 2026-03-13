@@ -185,14 +185,21 @@ class SpatialData:
     # Metadata color columns
     # ------------------------------------------------------------------
 
+    # Categorical columns with more unique values than this are treated as
+    # high-cardinality and downgraded to numeric (or skipped if non-numeric).
+    _MAX_CATEGORIES = 500
+
     def color_columns(self) -> list[dict]:
         result = []
         for col in self.obs.columns:
             if col in self._skip_cols:
                 continue
             vals = self.obs[col]
-            is_cat = isinstance(vals.dtype, pd.CategoricalDtype) or vals.dtype == object
             n_unique = int(vals.nunique())
+            is_cat = (
+                (isinstance(vals.dtype, pd.CategoricalDtype) or vals.dtype == object)
+                and n_unique <= self._MAX_CATEGORIES
+            )
             tag = f'cat · {n_unique}' if is_cat else 'num'
             result.append({
                 'label': f'{col}  [{tag}]',
@@ -209,7 +216,11 @@ class SpatialData:
             return None, False, None
 
         vals = self.obs[col]
-        is_cat = isinstance(vals.dtype, pd.CategoricalDtype) or vals.dtype == object
+        n_unique = int(vals.nunique())
+        is_cat = (
+            (isinstance(vals.dtype, pd.CategoricalDtype) or vals.dtype == object)
+            and n_unique <= self._MAX_CATEGORIES
+        )
 
         if is_cat:
             if hasattr(vals, 'cat'):
@@ -223,11 +234,14 @@ class SpatialData:
                     palette = palette * 2
                 colors = palette[:len(categories)]
             else:
-                palette = (
+                base = (
                     list(px.colors.qualitative.Plotly)
                     + list(px.colors.qualitative.D3)
                     + list(px.colors.qualitative.Set1) * 4
                 )
+                palette = base
+                while len(palette) < len(categories):
+                    palette = palette + base
                 colors = palette[:len(categories)]
 
             return vals, True, list(zip(categories, colors))
