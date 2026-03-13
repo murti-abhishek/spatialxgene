@@ -441,6 +441,13 @@ def create_app(data: SpatialData) -> dash.Dash:
     genes   = data.gene_names
     has_dge = len(genes) > 0
 
+    if not views:
+        raise ValueError(
+            f"No 2-D embeddings found in '{data.path.name}'.\n"
+            "spatialxgene needs at least one of:\n"
+            "  • obsm keys: spatial, X_umap, X_pca, X_scVI (or any 2-D obsm array)\n"
+            "  • obs columns: center_x/center_y, x/y, x_centroid/y_centroid, spatial_x/spatial_y"
+        )
     default_view  = views[0]['value']
     default_color = next(
         (c['value'] for c in columns if c['is_categorical']),

@@ -34,6 +34,14 @@ _AXIS_LABELS = {
     'scvi':    ('scVI 1', 'scVI 2'),
 }
 
+# Candidate obs column pairs for synthesising obsm['spatial'] when absent
+_SPATIAL_COL_PAIRS = [
+    ('center_x',  'center_y'),
+    ('x_centroid','y_centroid'),
+    ('spatial_x', 'spatial_y'),
+    ('x',         'y'),
+]
+
 
 def _decode_bytes(arr: np.ndarray) -> list:
     return [x.decode() if isinstance(x, bytes) else x for x in arr]
@@ -121,6 +129,15 @@ class SpatialData:
             self.obs = pd.DataFrame(obs_raw, index=cell_ids)
             self.n_cells = len(self.obs)
 
+            # Synthesise obsm['spatial'] from obs columns when absent
+            if 'spatial' not in self.obsm:
+                for xcol, ycol in _SPATIAL_COL_PAIRS:
+                    if xcol in obs_raw and ycol in obs_raw:
+                        xarr = np.asarray(obs_raw[xcol], dtype=float)
+                        yarr = np.asarray(obs_raw[ycol], dtype=float)
+                        self.obsm['spatial'] = np.column_stack([xarr, yarr])
+                        break
+
             # --- uns colors ---
             self.uns_colors: dict[str, list[str]] = {}
             if 'uns' in f:
@@ -159,16 +176,24 @@ class SpatialData:
     # ------------------------------------------------------------------
 
     def available_views(self) -> list[dict]:
-        return [
-            {'label': label, 'value': label.lower()}
-            for label, obsm_key in _VIEW_KEYS
-            if obsm_key in self.obsm
-        ]
+        seen: set = set()
+        result = []
+        # Known views first (preserves display order)
+        for label, obsm_key in _VIEW_KEYS:
+            if obsm_key in self.obsm:
+                result.append({'label': label, 'value': label.lower()})
+                seen.add(obsm_key)
+        # Auto-detect any remaining 2-D obsm arrays
+        for key, arr in self.obsm.items():
+            if key not in seen and arr.ndim == 2 and arr.shape[1] >= 2:
+                result.append({'label': key, 'value': key})
+        return result
 
     def get_coords(self, view: str, flip_y: bool = False, flip_x: bool = False):
         key_map = {label.lower(): obsm_key for label, obsm_key in _VIEW_KEYS}
-        obsm_key = key_map.get(view.lower())
-        if obsm_key and obsm_key in self.obsm:
+        # Known views map to their obsm key; unknown views use the raw value as the key
+        obsm_key = key_map.get(view, view)
+        if obsm_key in self.obsm:
             arr = self.obsm[obsm_key]
             x, y = arr[:, 0].copy(), arr[:, 1].copy()
             if flip_y:
