@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import h5py
 import numpy as np
 import pandas as pd
@@ -268,6 +269,14 @@ class SpatialData:
                 while len(palette) < len(categories):
                     palette = palette + base
                 colors = palette[:len(categories)]
+
+            # datashader requires hex colors, not css rgb() strings
+            def _to_hex(c: str) -> str:
+                m = re.match(r'rgb\((\d+),\s*(\d+),\s*(\d+)\)', c)
+                if m:
+                    return '#{:02x}{:02x}{:02x}'.format(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+                return c
+            colors = [_to_hex(c) for c in colors]
 
             return vals, True, list(zip(categories, colors))
 

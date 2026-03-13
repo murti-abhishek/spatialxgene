@@ -216,6 +216,38 @@ class TestGetColorInfo:
         colors = [c for _, c in cat_colors]
         assert "#1f77b4" in colors  # from uns/leiden_colors in fixture
 
+    def test_high_cardinality_colors_are_hex(self, tmp_path):
+        """Columns with >10 categories fall back to px.colors.qualitative,
+        which returns 'rgb(r,g,b)' strings — these must be converted to hex
+        before being passed to datashader."""
+        import scipy.sparse as sp
+        n_cells, n_cats = 100, 25
+        path = tmp_path / "hicard.h5ad"
+        rng = np.random.default_rng(42)
+        csr = sp.csr_matrix(rng.random((n_cells, 1)).astype(np.float32))
+        with h5py.File(path, "w") as f:
+            obs = f.create_group("obs")
+            obs.create_dataset("_index", data=np.array([f"c{i}".encode() for i in range(n_cells)]))
+            grp = obs.create_group("cluster")
+            grp.create_dataset("codes", data=np.array([i % n_cats for i in range(n_cells)], dtype=np.int8))
+            grp.create_dataset("categories", data=np.array([f"c{i}".encode() for i in range(n_cats)]))
+            obsm = f.create_group("obsm")
+            obsm.create_dataset("spatial", data=rng.random((n_cells, 2)).astype(np.float32))
+            var = f.create_group("var")
+            var.create_dataset("_index", data=np.array([b"gene_0"]))
+            X = f.create_group("X")
+            X.create_dataset("data",    data=csr.data)
+            X.create_dataset("indices", data=csr.indices)
+            X.create_dataset("indptr",  data=csr.indptr)
+            f.create_group("uns")
+        sd = SpatialData(str(path))
+        _, is_cat, cat_colors = sd.get_color_info("cluster")
+        assert is_cat is True
+        assert len(cat_colors) == n_cats
+        colors = [c for _, c in cat_colors]
+        assert all(c.startswith("#") for c in colors), \
+            f"Non-hex color found: {[c for c in colors if not c.startswith('#')]}"
+
 
 # ---------------------------------------------------------------------------
 # Gene expression
