@@ -192,7 +192,7 @@ class SpatialData:
     def get_coords(self, view: str, flip_y: bool = False, flip_x: bool = False):
         key_map = {label.lower(): obsm_key for label, obsm_key in _VIEW_KEYS}
         # Known views map to their obsm key; unknown views use the raw value as the key
-        obsm_key = key_map.get(view, view)
+        obsm_key = key_map.get(view.lower(), view)
         if obsm_key in self.obsm:
             arr = self.obsm[obsm_key]
             x, y = arr[:, 0].copy(), arr[:, 1].copy()
