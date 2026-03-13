@@ -77,7 +77,14 @@ class SpatialData:
 
     def _load(self):
         with h5py.File(self.path, 'r') as f:
-            n_total = f['obs']['_index'].shape[0]
+            obs_grp = f['obs']
+            # The '_index' *attribute* stores the name of the index dataset.
+            # Older files store the index directly as a dataset named '_index';
+            # newer AnnData (encoding-version 0.2+) uses an attribute to name it.
+            _idx_key = obs_grp.attrs.get('_index', '_index')
+            if _idx_key not in obs_grp:
+                _idx_key = '_index'  # fall back to literal key
+            n_total = obs_grp[_idx_key].shape[0]
             self.n_cells_total = n_total
 
             rng = np.random.default_rng(self._seed)
@@ -99,7 +106,7 @@ class SpatialData:
 
             # --- obs ---
             obs_raw: dict = {}
-            raw_ids = f['obs']['_index'][:]
+            raw_ids = obs_grp[_idx_key][:]
             cell_ids = _decode_bytes(raw_ids) if raw_ids.dtype.kind in ('S', 'O') else list(raw_ids)
             if idx is not None:
                 cell_ids = [cell_ids[i] for i in idx]
