@@ -577,10 +577,6 @@ def create_app(data: SpatialData) -> dash.Dash:
         html.Div([
             html.Button('Clear', id='dge-clear-btn', n_clicks=0,
                         className='dge-action-btn'),
-            html.Button('⬇ G1', id='dl-g1-btn', n_clicks=0,
-                        className='dge-action-btn', title='Download G1 barcodes'),
-            html.Button('⬇ G2', id='dl-g2-btn', n_clicks=0,
-                        className='dge-action-btn', title='Download G2 barcodes'),
             html.Button('Run DGE ▶', id='dge-run-btn', n_clicks=0,
                         disabled=True, className='dge-run-btn'),
         ], style={'display': 'flex', 'gap': '6px'}),
@@ -798,13 +794,19 @@ def create_app(data: SpatialData) -> dash.Dash:
         <title>{%title%}</title>
         {%favicon%}
         <style>
-            body { background: #1e1e1e; margin: 0; }
+            /* Prevent white flash between spinner removal and app render */
+            html, body, #react-entry-point {
+                background: #1e1e1e !important;
+                margin: 0;
+            }
             ._dash-loading {
                 display: flex !important;
                 align-items: center;
                 justify-content: center;
                 height: 100vh;
                 background: #1e1e1e;
+                color: transparent;  /* hide default "Loading..." text */
+                font-size: 0;
             }
             ._dash-loading::after {
                 content: '';
@@ -840,16 +842,20 @@ def create_app(data: SpatialData) -> dash.Dash:
         dcc.Store(id='dge-result-store', data=None),  # serialised DGE df for download
         dcc.Store(id='legend-filter', data=None),       # active category for legend isolate
 
-        # Download targets
+        # Download target
         dcc.Download(id='dge-download'),
-        dcc.Download(id='barcode-download'),
 
         # Interval for DGE progress polling
         dcc.Interval(id='dge-interval', interval=500, n_intervals=0, disabled=True),
 
-        # Full-screen graph
+        # Full-screen graph — initial figure has dark bg to prevent white flash
         dcc.Graph(
             id='main-scatter',
+            figure=go.Figure(layout=dict(
+                paper_bgcolor='#1e1e1e', plot_bgcolor='#1e1e1e',
+                xaxis=dict(visible=False), yaxis=dict(visible=False),
+                margin=dict(l=0, r=0, t=0, b=0),
+            )),
             config={
                 'scrollZoom': True,
                 'toImageButtonOptions': {'format': 'svg', 'filename': 'spatialxgene'},
@@ -910,6 +916,9 @@ def create_app(data: SpatialData) -> dash.Dash:
     )
     def legend_click(n_clicks_list, current_filter):
         if not callback_context.triggered:
+            return dash.no_update
+        # Ignore when legend is rebuilt (all n_clicks are 0)
+        if not n_clicks_list or not any(n_clicks_list):
             return dash.no_update
         triggered = callback_context.triggered_id
         if not triggered or not isinstance(triggered, dict):
@@ -1324,29 +1333,6 @@ def create_app(data: SpatialData) -> dash.Dash:
         df = pd.DataFrame(result_data['records'])
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
         return dcc.send_data_frame(df.to_csv, f'dge_{timestamp}.csv', index=False)
-
-    # Barcode download (G1 / G2)
-    @app.callback(
-        Output('barcode-download', 'data'),
-        Input('dl-g1-btn', 'n_clicks'),
-        Input('dl-g2-btn', 'n_clicks'),
-        State('dge-g1', 'data'),
-        State('dge-g2', 'data'),
-        prevent_initial_call=True,
-    )
-    def download_barcodes(n1, n2, g1, g2):
-        triggered = callback_context.triggered_id
-        if triggered == 'dl-g1-btn' and g1:
-            barcodes = [data.obs.index[i] for i in g1]
-            label = 'G1'
-        elif triggered == 'dl-g2-btn' and g2:
-            barcodes = [data.obs.index[i] for i in g2]
-            label = 'G2'
-        else:
-            return dash.no_update
-        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        content = '\n'.join(barcodes) + '\n'
-        return dict(content=content, filename=f'barcodes_{label}_{timestamp}.txt')
 
     # DGE history display
     @app.callback(
