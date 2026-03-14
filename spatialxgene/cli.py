@@ -38,7 +38,9 @@ def main():
 @click.option('--debug',        is_flag=True,    help='Run Dash in debug mode.')
 @click.option('--skip-columns', default=None, metavar='COLS',
               help='Comma-separated column names to hide from the Color By dropdown.')
-def launch(h5ad_file, host, port, subsample, seed, debug, skip_columns):
+@click.option('--no-shift-libraries', is_flag=True,
+              help='Disable auto-shifting of overlapping library spatial coordinates.')
+def launch(h5ad_file, host, port, subsample, seed, debug, skip_columns, no_shift_libraries):
     """Launch the spatialxgene viewer for H5AD_FILE."""
     from .data import SpatialData
     from .app  import create_app
@@ -51,7 +53,8 @@ def launch(h5ad_file, host, port, subsample, seed, debug, skip_columns):
     skip_cols = set(c.strip() for c in skip_columns.split(',')) if skip_columns else None
 
     click.echo(f'Loading {h5ad_file} …', err=True)
-    data = SpatialData(h5ad_file, subsample=subsample, seed=seed, skip_columns=skip_cols)
+    data = SpatialData(h5ad_file, subsample=subsample, seed=seed, skip_columns=skip_cols,
+                       shift_libraries=not no_shift_libraries)
     click.echo(
         f'  {data.n_cells:,} cells'
         + (f' (subsampled from {data.n_cells_total:,})' if data.n_cells < data.n_cells_total else '')

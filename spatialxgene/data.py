@@ -71,12 +71,13 @@ class SpatialData:
     """In-memory store for a single h5ad file."""
 
     def __init__(self, path: str, subsample: Optional[int] = None, seed: int = 42,
-                 skip_columns: Optional[set] = None):
+                 skip_columns: Optional[set] = None, shift_libraries: bool = True):
         self.path = Path(path)
         self.name = self.path.stem
         self._subsample_n = subsample
         self._seed = seed
         self._skip_cols = _SKIP_COLS if skip_columns is None else set(skip_columns)
+        self._shift_libraries = shift_libraries
         self._load()
 
     def _load(self):
@@ -184,7 +185,8 @@ class SpatialData:
         self._csr_matrix = None   # row-sparse     — efficient per-cell access for DGE
 
         # Shift overlapping library spatial coordinates into a grid layout
-        self._shift_library_spatial_coords()
+        if self._shift_libraries:
+            self._shift_library_spatial_coords()
 
     # ------------------------------------------------------------------
     # Multi-library spatial layout

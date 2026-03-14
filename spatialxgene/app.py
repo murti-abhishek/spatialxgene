@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import dash
-from dash import dcc, html, Input, Output, State, Patch, callback_context, dash_table
+from dash import dcc, html, Input, Output, State, Patch, callback_context, dash_table, ALL
 import dash_bootstrap_components as dbc
 
 import datashader as ds
@@ -162,6 +162,10 @@ def _resolve_color(
 
 # ── Datashader rendering ───────────────────────────────────────────────────────
 
+# Single-entry render cache: stores the last result to avoid re-rendering when
+# only opacity changes (opacity is applied via layout_image, not baked into PNG).
+_ds_cache: dict = {'key': None, 'result': None}
+
 def _render_datashader(
     x: np.ndarray,
     y: np.ndarray,
@@ -180,8 +184,7 @@ def _render_datashader(
 
     Returns: (base64_png, (x0, x1), (y0, y1))
     """
-    df = pd.DataFrame({'x': x, 'y': y})
-
+    # Compute ranges first so the cache key always uses explicit bounds
     if x_range is None:
         x_min, x_max = float(x.min()), float(x.max())
         x_pad = (x_max - x_min) * 0.02
@@ -190,6 +193,22 @@ def _render_datashader(
         y_min, y_max = float(y.min()), float(y.max())
         y_pad = (y_max - y_min) * 0.02
         y_range = (y_min - y_pad, y_max + y_pad)
+
+    # Build a hashable cache key from the render parameters
+    _color_hash = None
+    if color_vals is not None:
+        _ca = np.asarray(color_vals)
+        if _ca.dtype.kind in ('f', 'i', 'u'):
+            _color_hash = (float(np.nanmean(_ca)), float(np.nanstd(_ca)), len(_ca))
+        else:
+            _color_hash = (str(_ca[:3]), len(_ca))
+    _cat_hash = tuple((c, clr) for c, clr in cat_colors) if cat_colors else None
+    cache_key = (id(x), len(x), x_range, y_range, is_categorical, _cat_hash,
+                 _color_hash, spread_px, cmap_name, width, height)
+    if _ds_cache['key'] == cache_key and _ds_cache['result'] is not None:
+        return _ds_cache['result']
+
+    df = pd.DataFrame({'x': x, 'y': y})
 
     canvas = ds.Canvas(plot_width=width, plot_height=height,
                        x_range=x_range, y_range=y_range)
@@ -220,7 +239,10 @@ def _render_datashader(
     buf.seek(0)
     b64 = base64.b64encode(buf.read()).decode('utf-8')
 
-    return f'data:image/png;base64,{b64}', x_range, y_range
+    result = (f'data:image/png;base64,{b64}', x_range, y_range)
+    _ds_cache['key'] = cache_key
+    _ds_cache['result'] = result
+    return result
 
 
 def _make_datashader_figure(
@@ -350,27 +372,107 @@ def _make_datashader_figure(
 
 # ── sidebar legend ────────────────────────────────────────────────────────────
 
-def _sidebar_legend(cat_colors, obs_vals):
+def _sidebar_legend(cat_colors, obs_vals, active_cat=None):
     val_arr = np.asarray(obs_vals, dtype=object)
     items = []
+
+    # "Show All" button when a category is isolated
+    if active_cat is not None:
+        items.append(html.Div(
+            html.Span('Show All ✕', style={'fontSize': '10px', 'color': '#4ec9b0',
+                                            'cursor': 'pointer'}),
+            id={'type': 'legend-item', 'index': '__all__'},
+            n_clicks=0,
+            style={'marginBottom': '5px', 'cursor': 'pointer'},
+        ))
+
     for cat, color in cat_colors:
         n = int((val_arr == cat).sum())
+        is_active = active_cat is None or active_cat == str(cat)
+        dim = 0.25 if (active_cat is not None and active_cat != str(cat)) else 1.0
         items.append(html.Div([
             html.Span(style={
                 'display': 'inline-block', 'width': '10px', 'height': '10px',
                 'borderRadius': '50%', 'background': color,
                 'marginRight': '7px', 'flexShrink': '0',
+                'opacity': str(dim),
             }),
             html.Span(f'{cat}  ({n:,})',
-                      style={'fontSize': '11px', 'color': '#bbb', 'lineHeight': '1.4'}),
-        ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '3px'}))
+                      style={'fontSize': '11px', 'lineHeight': '1.4',
+                             'color': '#bbb' if is_active else '#555'}),
+        ], id={'type': 'legend-item', 'index': str(cat)}, n_clicks=0,
+           style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '3px',
+                  'cursor': 'pointer'}))
     return html.Div(items, style={'maxHeight': '260px', 'overflowY': 'auto'})
 
 
 # ── DGE results table ─────────────────────────────────────────────────────────
 
+def _volcano_plot(df: pd.DataFrame) -> go.Figure:
+    """Build a dark-themed volcano plot: log2FC vs −log10(padj)."""
+    plot_df = df.copy()
+    plot_df['neg_log10_padj'] = -np.log10(plot_df['padj'].clip(lower=1e-300))
+
+    # Color: G1-up = teal, G2-up = coral, ns = grey
+    colors = []
+    for _, row in plot_df.iterrows():
+        if row['padj'] < 0.05 and row['log2fc'] > 0:
+            colors.append('#4ec9b0')
+        elif row['padj'] < 0.05 and row['log2fc'] < 0:
+            colors.append('#f48771')
+        else:
+            colors.append('#555')
+    plot_df['color'] = colors
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=plot_df['log2fc'],
+        y=plot_df['neg_log10_padj'],
+        mode='markers+text',
+        marker=dict(color=plot_df['color'], size=6, opacity=0.85),
+        text=plot_df['gene'],
+        textposition='top center',
+        textfont=dict(size=8, color='#999'),
+        hovertemplate=(
+            '<b>%{text}</b><br>'
+            'log₂FC: %{x:.3f}<br>'
+            '−log₁₀(padj): %{y:.2f}'
+            '<extra></extra>'
+        ),
+    ))
+
+    # Only label top genes (by |log2fc| among significant)
+    sig = plot_df[plot_df['padj'] < 0.05].copy()
+    if len(sig) > 0:
+        top_genes = sig.reindex(sig['log2fc'].abs().nlargest(10).index)
+        fig.data[0].textposition = 'top center'
+        # Hide text for all except top genes
+        text_arr = [''] * len(plot_df)
+        for idx in top_genes.index:
+            pos = plot_df.index.get_loc(idx)
+            text_arr[pos] = plot_df.loc[idx, 'gene']
+        fig.data[0].text = text_arr
+
+    # Significance threshold line
+    fig.add_hline(y=-np.log10(0.05), line_dash='dash', line_color='#444',
+                  line_width=1)
+
+    fig.update_layout(
+        paper_bgcolor='#1e1e1e', plot_bgcolor='#1e1e1e',
+        xaxis=dict(title='log₂ Fold Change', color='#aaa', gridcolor='#2a2a2a',
+                   zeroline=True, zerolinecolor='#333'),
+        yaxis=dict(title='−log₁₀(adj. p-value)', color='#aaa', gridcolor='#2a2a2a',
+                   zeroline=False),
+        margin=dict(l=60, r=20, t=20, b=50),
+        height=380,
+        showlegend=False,
+        hovermode='closest',
+    )
+    return fig
+
+
 def _dge_table(df: pd.DataFrame, n1: int, n2: int) -> html.Div:
-    """Build a dark-themed DataTable from a DGE result DataFrame."""
+    """Build a dark-themed DataTable + volcano plot from a DGE result DataFrame."""
     display = df.sort_values('log2fc', ascending=False).copy()
     display.insert(0, '#', range(1, len(display) + 1))
     display['log2fc'] = display['log2fc'].round(3)
@@ -431,7 +533,12 @@ def _dge_table(df: pd.DataFrame, n1: int, n2: int) -> html.Div:
         html.Span('up in G2', style={'color': '#aaa', 'fontSize': '11px'}),
     ], style={'marginBottom': '10px'})
 
-    return html.Div([subtitle, legend, tbl])
+    # Volcano plot
+    volcano_fig = _volcano_plot(df)
+    volcano = dcc.Graph(figure=volcano_fig, config={'displayModeBar': False},
+                        style={'marginBottom': '16px'})
+
+    return html.Div([subtitle, legend, volcano, tbl])
 
 
 # ── app factory ───────────────────────────────────────────────────────────────
@@ -503,6 +610,19 @@ def create_app(data: SpatialData) -> dash.Dash:
             html.Button('Set', id='dge-set-g2', n_clicks=0, className='dge-set-btn'),
         ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '10px'}),
 
+        # G2 = rest toggle
+        html.Div(
+            dcc.Checklist(
+                id='g2-rest-check',
+                options=[{'label': ' G2 = all other cells', 'value': 'g2_rest'}],
+                value=[],
+                inputStyle={'marginRight': '4px'},
+                labelStyle={'color': '#888', 'fontSize': '10px',
+                            'display': 'inline-block'},
+            ),
+            style={'marginBottom': '8px'},
+        ),
+
         # Test type
         _label('Test'),
         dcc.RadioItems(
@@ -522,6 +642,10 @@ def create_app(data: SpatialData) -> dash.Dash:
         html.Div([
             html.Button('Clear', id='dge-clear-btn', n_clicks=0,
                         className='dge-action-btn'),
+            html.Button('⬇ G1', id='dl-g1-btn', n_clicks=0,
+                        className='dge-action-btn', title='Download G1 barcodes'),
+            html.Button('⬇ G2', id='dl-g2-btn', n_clicks=0,
+                        className='dge-action-btn', title='Download G2 barcodes'),
             html.Button('Run DGE ▶', id='dge-run-btn', n_clicks=0,
                         disabled=True, className='dge-run-btn'),
         ], style={'display': 'flex', 'gap': '6px'}),
@@ -590,6 +714,11 @@ def create_app(data: SpatialData) -> dash.Dash:
             style={'display': 'none'},
         ),
 
+        # Gene stats line (shown when a gene is selected)
+        html.Div(id='gene-stats',
+                 style={'color': '#666', 'fontSize': '10px', 'marginTop': '4px',
+                        'fontStyle': 'italic'}),
+
         # --- Point size slider ---
         _label('Point size'),
         dcc.Slider(id='size-slider', min=0, max=6, step=1, value=2,
@@ -620,6 +749,22 @@ def create_app(data: SpatialData) -> dash.Dash:
             inputStyle={'marginRight': '4px'},
             style={'marginBottom': '4px'},
         ),
+
+        # --- Color range clipping (continuous data only) ---
+        html.Div([
+            _label('Color range'),
+            dcc.RangeSlider(
+                id='color-range-slider',
+                min=0, max=1, step=0.01,
+                value=[0, 1],
+                marks={},
+                tooltip={'placement': 'bottom'},
+                className='dark-slider',
+            ),
+            html.Div(id='color-range-label',
+                     style={'color': '#666', 'fontSize': '10px',
+                            'textAlign': 'center', 'marginTop': '2px'}),
+        ], id='color-range-div', style={'display': 'none'}),
 
         # --- Axis flips ---
         html.Div(
@@ -715,9 +860,11 @@ def create_app(data: SpatialData) -> dash.Dash:
         dcc.Store(id='zoom-state', data={}),
         dcc.Store(id='dge-history', data=[]),
         dcc.Store(id='dge-result-store', data=None),  # serialised DGE df for download
+        dcc.Store(id='legend-filter', data=None),       # active category for legend isolate
 
-        # Download target
+        # Download targets
         dcc.Download(id='dge-download'),
+        dcc.Download(id='barcode-download'),
 
         # Interval for DGE progress polling
         dcc.Interval(id='dge-interval', interval=500, n_intervals=0, disabled=True),
@@ -754,11 +901,81 @@ def create_app(data: SpatialData) -> dash.Dash:
         return {'display': 'block'}, {'display': 'none'}
 
     @app.callback(
+        Output('gene-stats', 'children'),
+        Input('gene-dropdown', 'value'),
+        Input('color-source',  'value'),
+    )
+    def update_gene_stats(gene, color_src):
+        if color_src != 'gene' or not gene:
+            return ''
+        expr = data.get_gene_expr(gene)
+        if expr is None:
+            return ''
+        total = len(expr)
+        n_expr = int(np.count_nonzero(expr))
+        pct = 100.0 * n_expr / total if total else 0
+        return f'{pct:.1f}% expressing  ·  mean {np.mean(expr):.2f}  ·  max {np.max(expr):.1f}'
+
+    @app.callback(
         Output('flip-check', 'value'),
         Input('view-radio', 'value'),
     )
     def reset_flips_on_view_change(view):
         return ['flip_y'] if view == 'spatial' else []
+
+    # Legend click → isolate category
+    @app.callback(
+        Output('legend-filter', 'data'),
+        Input({'type': 'legend-item', 'index': ALL}, 'n_clicks'),
+        State('legend-filter', 'data'),
+        prevent_initial_call=True,
+    )
+    def legend_click(n_clicks_list, current_filter):
+        if not callback_context.triggered:
+            return dash.no_update
+        triggered = callback_context.triggered_id
+        if not triggered or not isinstance(triggered, dict):
+            return dash.no_update
+        clicked = triggered.get('index')
+        if clicked == '__all__' or clicked == current_filter:
+            return None  # clear filter
+        return clicked
+
+    # Clear legend filter when color column changes
+    @app.callback(
+        Output('legend-filter', 'data', allow_duplicate=True),
+        Input('color-source',  'value'),
+        Input('color-dropdown', 'value'),
+        Input('gene-dropdown',  'value'),
+        prevent_initial_call=True,
+    )
+    def clear_legend_filter_on_color_change(src, col, gene):
+        return None
+
+    # Update color range slider bounds when color source/column/gene changes
+    @app.callback(
+        Output('color-range-div',    'style'),
+        Output('color-range-slider', 'min'),
+        Output('color-range-slider', 'max'),
+        Output('color-range-slider', 'step'),
+        Output('color-range-slider', 'value'),
+        Output('color-range-slider', 'marks'),
+        Output('color-range-label',  'children'),
+        Input('color-source',  'value'),
+        Input('color-dropdown', 'value'),
+        Input('gene-dropdown',  'value'),
+    )
+    def update_color_range(color_src, color_col, gene_col):
+        _, is_cat, _, vmin, vmax = _resolve_color(data, color_src, color_col, gene_col)
+        if is_cat or vmin is None or vmax is None or vmin == vmax:
+            return {'display': 'none'}, 0, 1, 0.01, [0, 1], {}, ''
+        step = (vmax - vmin) / 200
+        marks = {
+            vmin: {'label': f'{vmin:.2g}', 'style': {'color': '#888', 'fontSize': '9px'}},
+            vmax: {'label': f'{vmax:.2g}', 'style': {'color': '#888', 'fontSize': '9px'}},
+        }
+        label = f'{vmin:.2g} – {vmax:.2g}'
+        return {'display': 'block'}, vmin, vmax, step, [vmin, vmax], marks, label
 
     # Main figure callback
     @app.callback(
@@ -776,14 +993,18 @@ def create_app(data: SpatialData) -> dash.Dash:
         Input('opacity-slider','value'),
         Input('colormap-radio','value'),
         Input('hover-check',   'value'),
+        Input('color-range-slider', 'value'),
+        Input('legend-filter', 'data'),
         State('zoom-state',    'data'),
     )
     def update_figure(view, flip_vals, color_src, color_col, gene_col,
-                      spread_px, opacity, cmap_name, hover_vals, zoom_state):
+                      spread_px, opacity, cmap_name, hover_vals, color_range,
+                      legend_filter, zoom_state):
         triggered = callback_context.triggered_id
         x_range = None
         y_range = None
-        visual_only = {'size-slider', 'opacity-slider', 'colormap-radio', 'hover-check'}
+        visual_only = {'size-slider', 'opacity-slider', 'colormap-radio', 'hover-check',
+                       'color-range-slider', 'legend-filter'}
         if triggered in visual_only and zoom_state:
             xr = zoom_state.get('x_range')
             yr = zoom_state.get('y_range')
@@ -814,9 +1035,21 @@ def create_app(data: SpatialData) -> dash.Dash:
             data, color_src, color_col, gene_col
         )
 
+        # Apply user color range clipping for continuous data
+        if not is_categorical and color_vals is not None and color_range:
+            clip_lo, clip_hi = color_range
+            if vmin is not None and vmax is not None and clip_hi > clip_lo:
+                vmin, vmax = float(clip_lo), float(clip_hi)
+                color_vals = np.clip(color_vals, vmin, vmax)
+
         legend_content = html.Div()
         if is_categorical and cat_colors:
-            legend_content = _sidebar_legend(cat_colors, color_vals)
+            legend_content = _sidebar_legend(cat_colors, color_vals, active_cat=legend_filter)
+            # When a category is isolated, grey out all others in the datashader render
+            if legend_filter is not None:
+                filtered_colors = [(cat, color if str(cat) == legend_filter else '#222222')
+                                   for cat, color in cat_colors]
+                cat_colors = filtered_colors
             label = f'{data.name}  ·  {view.upper()}  ·  {color_col}'
         elif color_src == 'gene' and gene_col:
             label = f'{data.name}  ·  {view.upper()}  ·  {gene_col}'
@@ -978,14 +1211,23 @@ def create_app(data: SpatialData) -> dash.Dash:
         Output('dge-run-btn',  'disabled'),
         Input('dge-g1', 'data'),
         Input('dge-g2', 'data'),
+        Input('g2-rest-check', 'value'),
     )
-    def update_dge_ui(g1, g2):
+    def update_dge_ui(g1, g2, g2_rest_vals):
         n1 = len(g1) if g1 else 0
         n2 = len(g2) if g2 else 0
+        g2_is_rest = 'g2_rest' in (g2_rest_vals or [])
+        if g2_is_rest and n1 > 0:
+            n2_eff = data.n_cells - n1
+            g2_label = f'{n2_eff:,} cells (rest)'
+            can_run = n1 > 0
+        else:
+            g2_label = f'{n2:,} cells' if n2 else 'not set'
+            can_run = n1 > 0 and n2 > 0
         return (
             f'{n1:,} cells' if n1 else 'not set',
-            f'{n2:,} cells' if n2 else 'not set',
-            not (n1 > 0 and n2 > 0),
+            g2_label,
+            not can_run,
         )
 
     # ── DGE run / progress / close ─────────────────────────────────────
@@ -998,9 +1240,14 @@ def create_app(data: SpatialData) -> dash.Dash:
         State('dge-g1',        'data'),
         State('dge-g2',        'data'),
         State('dge-test-radio', 'value'),
+        State('g2-rest-check', 'value'),
         prevent_initial_call=True,
     )
-    def start_dge(_, g1, g2, test):
+    def start_dge(_, g1, g2, test, g2_rest_vals):
+        g2_is_rest = 'g2_rest' in (g2_rest_vals or [])
+        if g2_is_rest and g1:
+            g1_set = set(g1)
+            g2 = [i for i in range(data.n_cells) if i not in g1_set]
         if not g1 or not g2:
             return False, True, dash.no_update
 
@@ -1099,6 +1346,29 @@ def create_app(data: SpatialData) -> dash.Dash:
         df = pd.DataFrame(result_data['records'])
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
         return dcc.send_data_frame(df.to_csv, f'dge_{timestamp}.csv', index=False)
+
+    # Barcode download (G1 / G2)
+    @app.callback(
+        Output('barcode-download', 'data'),
+        Input('dl-g1-btn', 'n_clicks'),
+        Input('dl-g2-btn', 'n_clicks'),
+        State('dge-g1', 'data'),
+        State('dge-g2', 'data'),
+        prevent_initial_call=True,
+    )
+    def download_barcodes(n1, n2, g1, g2):
+        triggered = callback_context.triggered_id
+        if triggered == 'dl-g1-btn' and g1:
+            barcodes = [data.obs.index[i] for i in g1]
+            label = 'G1'
+        elif triggered == 'dl-g2-btn' and g2:
+            barcodes = [data.obs.index[i] for i in g2]
+            label = 'G2'
+        else:
+            return dash.no_update
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        content = '\n'.join(barcodes) + '\n'
+        return dict(content=content, filename=f'barcodes_{label}_{timestamp}.txt')
 
     # DGE history display
     @app.callback(
