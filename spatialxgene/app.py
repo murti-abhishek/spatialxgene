@@ -56,9 +56,12 @@ Viridis256 = [
 
 # Datashader colormaps: all 256-color hex lists
 COLORMAPS_DS = {
-    'viridis': Viridis256,
-    'inferno': cc.fire,   # black → red → yellow; great on dark bg for gene expression
-    'plasma':  cc.bmy,    # blue → magenta → yellow
+    'viridis':  Viridis256,
+    'fire':     cc.fire,    # black → red → yellow → white
+    'bmy':      cc.bmy,     # blue → magenta → yellow
+    'bgy':      cc.bgy,     # blue → green → yellow
+    'rainbow':  cc.rainbow, # full rainbow spectrum
+    'dimgray':  cc.dimgray, # dark gray → light gray
 }
 
 def _make_plotly_colorscale(cmap: list) -> list:
@@ -408,71 +411,8 @@ def _sidebar_legend(cat_colors, obs_vals, active_cat=None):
 
 # ── DGE results table ─────────────────────────────────────────────────────────
 
-def _volcano_plot(df: pd.DataFrame) -> go.Figure:
-    """Build a dark-themed volcano plot: log2FC vs −log10(padj)."""
-    plot_df = df.copy()
-    plot_df['neg_log10_padj'] = -np.log10(plot_df['padj'].clip(lower=1e-300))
-
-    # Color: G1-up = teal, G2-up = coral, ns = grey
-    colors = []
-    for _, row in plot_df.iterrows():
-        if row['padj'] < 0.05 and row['log2fc'] > 0:
-            colors.append('#4ec9b0')
-        elif row['padj'] < 0.05 and row['log2fc'] < 0:
-            colors.append('#f48771')
-        else:
-            colors.append('#555')
-    plot_df['color'] = colors
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=plot_df['log2fc'],
-        y=plot_df['neg_log10_padj'],
-        mode='markers+text',
-        marker=dict(color=plot_df['color'], size=6, opacity=0.85),
-        text=plot_df['gene'],
-        textposition='top center',
-        textfont=dict(size=8, color='#999'),
-        hovertemplate=(
-            '<b>%{text}</b><br>'
-            'log₂FC: %{x:.3f}<br>'
-            '−log₁₀(padj): %{y:.2f}'
-            '<extra></extra>'
-        ),
-    ))
-
-    # Only label top genes (by |log2fc| among significant)
-    sig = plot_df[plot_df['padj'] < 0.05].copy()
-    if len(sig) > 0:
-        top_genes = sig.reindex(sig['log2fc'].abs().nlargest(10).index)
-        fig.data[0].textposition = 'top center'
-        # Hide text for all except top genes
-        text_arr = [''] * len(plot_df)
-        for idx in top_genes.index:
-            pos = plot_df.index.get_loc(idx)
-            text_arr[pos] = plot_df.loc[idx, 'gene']
-        fig.data[0].text = text_arr
-
-    # Significance threshold line
-    fig.add_hline(y=-np.log10(0.05), line_dash='dash', line_color='#444',
-                  line_width=1)
-
-    fig.update_layout(
-        paper_bgcolor='#1e1e1e', plot_bgcolor='#1e1e1e',
-        xaxis=dict(title='log₂ Fold Change', color='#aaa', gridcolor='#2a2a2a',
-                   zeroline=True, zerolinecolor='#333'),
-        yaxis=dict(title='−log₁₀(adj. p-value)', color='#aaa', gridcolor='#2a2a2a',
-                   zeroline=False),
-        margin=dict(l=60, r=20, t=20, b=50),
-        height=380,
-        showlegend=False,
-        hovermode='closest',
-    )
-    return fig
-
-
 def _dge_table(df: pd.DataFrame, n1: int, n2: int) -> html.Div:
-    """Build a dark-themed DataTable + volcano plot from a DGE result DataFrame."""
+    """Build a dark-themed DataTable from a DGE result DataFrame."""
     display = df.sort_values('log2fc', ascending=False).copy()
     display.insert(0, '#', range(1, len(display) + 1))
     display['log2fc'] = display['log2fc'].round(3)
@@ -533,12 +473,7 @@ def _dge_table(df: pd.DataFrame, n1: int, n2: int) -> html.Div:
         html.Span('up in G2', style={'color': '#aaa', 'fontSize': '11px'}),
     ], style={'marginBottom': '10px'})
 
-    # Volcano plot
-    volcano_fig = _volcano_plot(df)
-    volcano = dcc.Graph(figure=volcano_fig, config={'displayModeBar': False},
-                        style={'marginBottom': '16px'})
-
-    return html.Div([subtitle, legend, volcano, tbl])
+    return html.Div([subtitle, legend, tbl])
 
 
 # ── app factory ───────────────────────────────────────────────────────────────
@@ -739,12 +674,15 @@ def create_app(data: SpatialData) -> dash.Dash:
         dcc.RadioItems(
             id='colormap-radio',
             options=[
-                {'label': ' Viridis', 'value': 'viridis'},
-                {'label': ' Inferno', 'value': 'inferno'},
-                {'label': ' Plasma',  'value': 'plasma'},
+                {'label': ' Viridis',  'value': 'viridis'},
+                {'label': ' Fire',     'value': 'fire'},
+                {'label': ' BMY',      'value': 'bmy'},
+                {'label': ' BGY',      'value': 'bgy'},
+                {'label': ' Rainbow',  'value': 'rainbow'},
+                {'label': ' Gray',     'value': 'dimgray'},
             ],
             value='viridis',
-            labelStyle={'display': 'inline-block', 'marginRight': '10px',
+            labelStyle={'display': 'inline-block', 'marginRight': '8px',
                         'color': '#888', 'fontSize': '11px'},
             inputStyle={'marginRight': '4px'},
             style={'marginBottom': '4px'},
@@ -850,6 +788,46 @@ def create_app(data: SpatialData) -> dash.Dash:
         assets_folder=str(__file__).replace('app.py', 'assets'),
         suppress_callback_exceptions=True,
     )
+
+    # Inline the loading-spinner CSS in the index so it appears BEFORE
+    # external stylesheets and JS bundles finish loading.
+    app.index_string = '''<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        <style>
+            body { background: #1e1e1e; margin: 0; }
+            ._dash-loading {
+                display: flex !important;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                background: #1e1e1e;
+            }
+            ._dash-loading::after {
+                content: '';
+                width: 36px;
+                height: 36px;
+                border: 3px solid #333;
+                border-top-color: #4ec9b0;
+                border-radius: 50%;
+                animation: sxg-spin 0.8s linear infinite;
+            }
+            @keyframes sxg-spin { to { transform: rotate(360deg); } }
+        </style>
+        {%css%}
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>'''
 
     app.layout = html.Div([
         # Stores

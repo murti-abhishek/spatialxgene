@@ -182,28 +182,6 @@ body {
 .dge-progress { background-color: #2d2d2d !important; border-radius: 4px; }
 .dge-progress .progress-bar { background-color: #4ec9b0 !important; }
 
-/* ── Loading spinner (shown before first Dash render) ────────────── */
-
-._dash-loading {
-  display: flex !important;
-  align-items: center;
-  justify-content: center;
-  height: 100vh;
-  background: #1e1e1e;
-}
-._dash-loading::after {
-  content: '';
-  width: 36px;
-  height: 36px;
-  border: 3px solid #333;
-  border-top-color: #4ec9b0;
-  border-radius: 50%;
-  animation: sxg-spin 0.8s linear infinite;
-}
-@keyframes sxg-spin {
-  to { transform: rotate(360deg); }
-}
-
 /* ── Legend items ─────────────────────────────────────────────────── */
 
 [id^='{"type":"legend-item"']:hover {
