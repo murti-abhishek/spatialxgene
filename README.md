@@ -27,13 +27,17 @@ Tools like the Xenium Explorer are great during active analysis but are limited 
 
 ## Features
 
-- Visualize spatial, UMAP, PCA, and scVI embeddings
+- Visualize spatial, UMAP, PCA, and scVI embeddings — auto-detected from any `.h5ad`
 - Color cells by categorical or continuous metadata, or by gene expression
 - Datashader-powered rendering for smooth zoom/pan on datasets up to ~2M cells
 - Point size and opacity controls
+- Flip X / Flip Y axes independently per view
+- **Multi-library auto-layout**: when a dataset contains multiple library sections (e.g. Visium HD, Xenium multi-capture) stored under a `library_id`, `sample`, or `batch` column, spatialxgene detects overlapping bounding boxes and automatically shifts each section into a non-overlapping grid — no manual coordinate stitching required
+- **Hover tooltips**: hover over any cell to see its current Color By value and barcode; toggled via a sidebar checkbox that defaults on for datasets ≤ 100k cells and off for larger ones to avoid browser overhead
 - Lasso/box selection for manual cell group definition
 - Differential gene expression between two user-defined groups (Welch t-test or Wilcoxon)
-- DGE history with per-run summaries
+- BH-corrected p-values; results table with CSV export
+- DGE history with per-run summaries in the sidebar
 - Dark theme UI
 
 ## Installation
@@ -83,8 +87,13 @@ spatialxgene launch data.h5ad --skip-columns "doublet_score,S_score,G2M_score"
 ## Requirements
 
 - Python >= 3.9
-- h5ad files with spatial coordinates in `obsm['spatial']`
-- Additional embeddings (`X_umap`, `X_pca`, `X_scVI`) are supported if present
+- h5ad files produced by Scanpy, AnnData, or compatible pipelines
+
+Spatial coordinates are read from, in order of preference:
+- `obsm['spatial']`
+- `obs` column pairs: `center_x`/`center_y`, `x_centroid`/`y_centroid`, `spatial_x`/`spatial_y`, `x`/`y`
+
+Additional embeddings (`X_umap`, `X_pca`, `X_scVI`, or any 2-D `obsm` array) are auto-detected and offered as views if present.
 
 ## License
 

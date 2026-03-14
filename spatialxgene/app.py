@@ -75,8 +75,9 @@ _SIDEBAR_W = 260
 _DS_WIDTH = 1600
 _DS_HEIGHT = 1600
 
-# Only generate hover text for datasets below this threshold (browser perf)
-_HOVER_MAX_CELLS = 150_000
+# Hover tooltips are expensive for large datasets (~90 bytes × N cells sent to browser).
+# Auto-enable below this threshold; above it the user can toggle the checkbox manually.
+_HOVER_AUTO_ON_MAX = 100_000
 
 # ── Module-level DGE progress state (single-user local tool) ─────────────────
 
@@ -636,6 +637,20 @@ def create_app(data: SpatialData) -> dash.Dash:
             style={'marginTop': '10px'},
         ),
 
+        # --- Hover tooltips toggle ---
+        html.Div(
+            dcc.Checklist(
+                id='hover-check',
+                options=[{'label': ' Hover tooltips', 'value': 'show_hover'}],
+                # Auto-on for small datasets; large datasets default off (performance)
+                value=['show_hover'] if data.n_cells <= _HOVER_AUTO_ON_MAX else [],
+                inputStyle={'marginRight': '4px'},
+                labelStyle={'color': '#ccc', 'fontSize': '12px',
+                            'display': 'inline-block'},
+            ),
+            style={'marginTop': '6px'},
+        ),
+
         # --- DGE panel ---
         dge_panel,
 
@@ -760,14 +775,15 @@ def create_app(data: SpatialData) -> dash.Dash:
         Input('size-slider',   'value'),
         Input('opacity-slider','value'),
         Input('colormap-radio','value'),
+        Input('hover-check',   'value'),
         State('zoom-state',    'data'),
     )
     def update_figure(view, flip_vals, color_src, color_col, gene_col,
-                      spread_px, opacity, cmap_name, zoom_state):
+                      spread_px, opacity, cmap_name, hover_vals, zoom_state):
         triggered = callback_context.triggered_id
         x_range = None
         y_range = None
-        visual_only = {'size-slider', 'opacity-slider', 'colormap-radio'}
+        visual_only = {'size-slider', 'opacity-slider', 'colormap-radio', 'hover-check'}
         if triggered in visual_only and zoom_state:
             xr = zoom_state.get('x_range')
             yr = zoom_state.get('y_range')
@@ -809,15 +825,25 @@ def create_app(data: SpatialData) -> dash.Dash:
         else:
             label = f'{data.name}  ·  {view.upper()}'
 
-        # Hover text: only for manageable cell counts
+        # Hover text: only built when the toggle is on (large datasets are expensive)
+        show_hover = 'show_hover' in (hover_vals or [])
         hovertext = None
-        if data.n_cells <= _HOVER_MAX_CELLS and color_vals is not None:
+        if show_hover and color_vals is not None:
             col_label = gene_col if color_src == 'gene' else color_col
+            barcodes = list(data.obs.index)
             if is_categorical:
                 obs_vals = data.obs[color_col]
-                hovertext = [f'{col_label}: {v}' for v in obs_vals]
+                hovertext = [
+                    f'<b>{col_label}</b>: {v}<br>'
+                    f'<span style="color:#888;font-size:10px">{b}</span>'
+                    for v, b in zip(obs_vals, barcodes)
+                ]
             else:
-                hovertext = [f'{col_label}: {v:.2f}' for v in color_vals]
+                hovertext = [
+                    f'<b>{col_label}</b>: {v:.3g}<br>'
+                    f'<span style="color:#888;font-size:10px">{b}</span>'
+                    for v, b in zip(color_vals, barcodes)
+                ]
 
         fig = _make_datashader_figure(
             x, y, color_vals, is_categorical, cat_colors,

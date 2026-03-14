@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 import h5py
 import numpy as np
@@ -20,6 +21,9 @@ _SKIP_COLS = {
     'pct_counts_in_top_10_genes', 'pct_counts_in_top_20_genes',
     'pct_counts_in_top_50_genes', 'pct_counts_in_top_150_genes',
 }
+
+# Candidate obs column names for a library/sample identifier
+_LIB_ID_CANDIDATES = ['library_id', 'sample_id', 'sample', 'batch', 'slide_id', 'library']
 
 _VIEW_KEYS = [
     ('Spatial', 'spatial'),
@@ -178,6 +182,103 @@ class SpatialData:
         self._gene_cache: dict[str, np.ndarray] = {}
         self._csc_matrix = None   # column-sparse  — efficient per-gene access
         self._csr_matrix = None   # row-sparse     — efficient per-cell access for DGE
+
+        # Shift overlapping library spatial coordinates into a grid layout
+        self._shift_library_spatial_coords()
+
+    # ------------------------------------------------------------------
+    # Multi-library spatial layout
+    # ------------------------------------------------------------------
+
+    def _shift_library_spatial_coords(self) -> None:
+        """Grid-arrange per-library spatial sections when their bboxes overlap.
+
+        Detects a library-ID column in obs (e.g. ``library_id``, ``sample``),
+        checks whether the sections' bounding boxes intersect, and — if they do
+        — shifts each library's XY coordinates so they are laid out side-by-side
+        in a grid with 10 % padding.  All non-spatial embeddings (UMAP, PCA …)
+        are left untouched.
+        """
+        if 'spatial' not in self.obsm:
+            return
+
+        # Find the library-ID column
+        lib_col: Optional[str] = None
+        for cand in _LIB_ID_CANDIDATES:
+            if cand in self.obs.columns:
+                lib_col = cand
+                break
+        if lib_col is None:
+            return
+
+        lib_arr = np.asarray(self.obs[lib_col], dtype=str)   # always plain str
+        libraries = sorted(set(lib_arr))
+        if len(libraries) < 2:
+            return
+
+        coords = self.obsm['spatial']   # view into the array — we'll replace it
+
+        # Per-library bounding boxes
+        bboxes: dict[str, dict] = {}
+        for lib in libraries:
+            mask = lib_arr == lib
+            pts = coords[mask]
+            if len(pts) == 0:
+                continue
+            bboxes[lib] = {
+                'mask': mask,
+                'xmin': float(pts[:, 0].min()),
+                'xmax': float(pts[:, 0].max()),
+                'ymin': float(pts[:, 1].min()),
+                'ymax': float(pts[:, 1].max()),
+                'w':    float(pts[:, 0].max() - pts[:, 0].min()),
+                'h':    float(pts[:, 1].max() - pts[:, 1].min()),
+            }
+
+        lib_list = [l for l in libraries if l in bboxes]
+        if len(lib_list) < 2:
+            return
+
+        # Check whether any pair of bounding boxes overlaps
+        def _overlaps(a: dict, b: dict) -> bool:
+            return not (
+                a['xmax'] < b['xmin'] or b['xmax'] < a['xmin'] or
+                a['ymax'] < b['ymin'] or b['ymax'] < a['ymin']
+            )
+
+        has_overlap = any(
+            _overlaps(bboxes[lib_list[i]], bboxes[lib_list[j]])
+            for i in range(len(lib_list))
+            for j in range(i + 1, len(lib_list))
+        )
+        if not has_overlap:
+            return  # sections are already spatially disjoint — leave as-is
+
+        # Arrange in a grid: ceil(sqrt(N)) columns, enough rows to fit all
+        n = len(lib_list)
+        n_cols = math.ceil(math.sqrt(n))
+
+        max_w = max(bboxes[l]['w'] for l in lib_list)
+        max_h = max(bboxes[l]['h'] for l in lib_list)
+        pad_x = max_w * 0.10
+        pad_y = max_h * 0.10
+
+        new_coords = coords.copy().astype(float)
+        for idx, lib in enumerate(lib_list):
+            b = bboxes[lib]
+            col_pos = idx % n_cols
+            row_pos = idx // n_cols
+            # Translate so this library's own origin is (0,0), then apply grid offset
+            x_shift = col_pos * (max_w + pad_x) - b['xmin']
+            y_shift = row_pos * (max_h + pad_y) - b['ymin']
+            new_coords[b['mask'], 0] += x_shift
+            new_coords[b['mask'], 1] += y_shift
+
+        self.obsm['spatial'] = new_coords
+        print(
+            f"[spatialxgene] {n} libraries detected in '{lib_col}'; "
+            f"spatial sections shifted into {math.ceil(n / n_cols)}×{n_cols} grid."
+        )
 
     # ------------------------------------------------------------------
     # Views / embeddings
